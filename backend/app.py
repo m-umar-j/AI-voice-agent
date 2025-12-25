@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import Response
 from dotenv import load_dotenv
 from elevenlabs.client import ElevenLabs
 from elevenlabs.play import save
@@ -29,6 +30,10 @@ class TTSResponse(BaseModel):
     audio_bytes: bytes
     audio_b64: str
     size_bytes: int
+class TTSMetadataResponse(BaseModel):
+    audio_b64: str      # Only base64 string (JSON serializable)
+    size_bytes: int
+    duration_estimate: float
 
 client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 
@@ -63,7 +68,7 @@ def get_transcript(audio_file: UploadFile = File(...)):
         logger.error(f"Unexpected STT error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
-@app.post("/text-to-speech", response_model=TTSResponse)
+@app.post("/text-to-speech", response_model=TTSMetadataResponse)
 def text_to_speech(request: TTSRequest):
     """TTS: Blocks until audio fully generated"""
     try:
@@ -79,10 +84,10 @@ def text_to_speech(request: TTSRequest):
         
         logger.info(f"TTS generated: {len(audio_bytes)} bytes")
         
-        return TTSResponse(
-            audio_bytes=audio_bytes,
+        return TTSMetadataResponse(
             audio_b64=base64.b64encode(audio_bytes).decode('utf-8'),
-            size_bytes=len(audio_bytes)
+            size_bytes=len(audio_bytes),
+            duration_estimate=len(request.text) / 150.0  # ~150 wpm estimate
         )
     
     except ApiError as e:
@@ -94,3 +99,23 @@ def text_to_speech(request: TTSRequest):
     except Exception as e:
         logger.error(f"Unexpected TTS error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+
+
+@app.post("/text-to-speech/download")
+def text_to_speech_download(request: TTSRequest):
+    try:
+        audio_generator = client.text_to_speech.convert(
+            text=request.text,
+            voice_id=request.voice_id,
+            model_id=request.model_id,
+            output_format="mp3_44100_128",
+        )
+        audio_bytes = b''.join(audio_generator)
+        
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "attachment; filename=response.mp3"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

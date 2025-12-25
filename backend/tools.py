@@ -46,7 +46,7 @@ class BraveSearchTool(BaseTool):
         headers = {
             "Accept": "application/json",
             "Accept-Encoding": "gzip",
-            "X-Subscription-Token": "BSArpzmUP6niJvI7ogwHKWiQVA7JLW6"
+            "X-Subscription-Token": api_key
         }
         
         params = {
